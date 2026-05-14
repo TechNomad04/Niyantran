@@ -61,22 +61,38 @@ class PipelineRunner:
         return cls(pipeline)
 
     def run(self, video_path: str) -> AnalyzeResponse:
+        logger.info("Starting pipeline run for video: %s", video_path)
         try:
             result = self._pipeline.run(video_path)
+            logger.info("Pipeline run completed successfully")
         except Exception as e:
+            logger.exception("Pipeline run failed with exception: %s", str(e))
             raise HTTPException(status_code=500, detail=str(e)) from e
 
-        if len(result["left_ear_sequence"]) == 0:
+        left_seq = result["left_ear_sequence"]
+        right_seq = result["right_ear_sequence"]
+        logger.info("EAR sequences — left: %d frames, right: %d frames", len(left_seq), len(right_seq))
+
+        if len(left_seq) == 0:
+            logger.warning("No face landmarks detected in video: %s", video_path)
             raise HTTPException(
                 status_code=422,
                 detail="No face landmarks detected in the video.",
             )
 
+        logger.info(
+            "dry_eye_prob=%s, has_dry_eye=%s, mean_ear_left=%.4f, mean_ear_right=%.4f",
+            result["dry_eye_prob"],
+            result["has_dry_eye"],
+            float(np.mean(left_seq)),
+            float(np.mean(right_seq)),
+        )
+
         return AnalyzeResponse(
             probability=result["dry_eye_prob"],
             has_dry_eye=result["has_dry_eye"],
-            mean_ear_left=float(np.mean(result["left_ear_sequence"])),
-            mean_ear_right=float(np.mean(result["right_ear_sequence"])),
+            mean_ear_left=float(np.mean(left_seq)),
+            mean_ear_right=float(np.mean(right_seq)),
         )
 
     def close(self) -> None:
