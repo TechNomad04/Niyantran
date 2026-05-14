@@ -56,6 +56,14 @@ class RatioCalculator:
         emd = EMD()
         imfs = emd.emd(S, max_imf=4)
 
-        residue = S-np.sum(imfs, axis=0)
+        residue = S - np.sum(imfs, axis=0)
         features = np.vstack([imfs, residue.reshape(1, -1)])
+
+      
+        target_rows = 5
+        if features.shape[0] < target_rows:
+            padding = np.zeros((target_rows - features.shape[0], features.shape[1]))
+            features = np.vstack([features, padding])
+
         return features.T
+
