@@ -1,3 +1,5 @@
+version: '3.9'
+
 services:
 
   db:
@@ -20,6 +22,16 @@ services:
     networks:
       - app-network
 
+  eye-pipeline:
+    build:
+      context: ./eye-pipeline
+    container_name: eye_pipeline
+    restart: always
+    ports:
+      - "8001:8001"
+    networks:
+      - app-network
+
   backend:
     build:
       context: ./backend
@@ -27,9 +39,11 @@ services:
     restart: always
     depends_on:
       - db
-      - redis
+      - eye-pipeline
     env_file:
       - ./backend/.env
+    environment:
+      PIPELINE_URL: http://eye-pipeline:8001
     ports:
       - "8000:8000"
     networks:
