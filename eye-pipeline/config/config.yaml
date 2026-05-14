@@ -1,6 +1,6 @@
 model:
   face_landmarker_path: "face_landmarker.task"
-  lstm_weights_path: "models/lstm.pth"
+  lstm_weights_path: "src/model/lstm.pth"
 
 preprocessing:
   size: "224x224"
