@@ -3,7 +3,6 @@ import cv2
 import numpy as np
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-import time
 from PyEMD import EMD
 
 class RatioCalculator:
@@ -20,11 +19,11 @@ class RatioCalculator:
 
         self.detector = FaceLandmarker.create_from_options(self.options)
 
-    def get_landmarks(self, frame):
+    def get_landmarks(self, frame, timestamp_ms: int):
         h, w, _ = frame.shape
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-        result = self.detector.detect_for_video(mp_image, int(time.time()*1000))
+        result = self.detector.detect_for_video(mp_image, timestamp_ms)
         return result.face_landmarks
 
     def get_left_eye_ratio(self, landmarks):
