@@ -21,11 +21,19 @@ import { Community } from './Community';
 
 const { CameraModule, AppBlockerModule } = NativeModules;
 
+interface AnalysisResult {
+  probability: number | null;
+  has_dry_eye: boolean | null;
+  mean_ear_left: number;
+  mean_ear_right: number;
+  timestamp: Date;
+}
+
 const App = () => {
   const [logs, setLogs] = useState<{ id: number; text: string; type: 'info' | 'error' | 'success' }[]>([]);
   const [isGrayscale, setIsGrayscale] = useState(false);
   const [currentScreen, setCurrentScreen] = useState<'dashboard' | 'appBlocker' | 'community'>('dashboard');
-  const [showLogs, setShowLogs] = useState(false);
+  const [latestResult, setLatestResult] = useState<AnalysisResult | null>(null);
   const scrollViewRef = useRef<ScrollView>(null);
 
   // Auth State
@@ -84,6 +92,16 @@ const App = () => {
         }
       });
 
+      const resultSub = DeviceEventEmitter.addListener('UploadResult', (event) => {
+        setLatestResult({
+          probability:    event.probability    ?? null,
+          has_dry_eye:   event.has_dry_eye    ?? null,
+          mean_ear_left:  event.mean_ear_left  ?? 0,
+          mean_ear_right: event.mean_ear_right ?? 0,
+          timestamp: new Date(),
+        });
+      });
+
       const warningSub = DeviceEventEmitter.addListener('ShowAppWarning', (pkg) => {
         Alert.alert("Usage Warning", `You have been using ${pkg} for 15 minutes! Consider taking a break.`);
       });
@@ -107,6 +125,7 @@ const App = () => {
 
       return () => {
         subscription.remove();
+        resultSub.remove();
         warningSub.remove();
       };
     }
@@ -266,6 +285,36 @@ const App = () => {
     }
   };
 
+  const handleLogout = () => {
+    Alert.alert(
+      "Logout",
+      "Are you sure you want to log out? This will stop background monitoring.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Logout", 
+          style: "destructive",
+          onPress: () => {
+            if (AppBlockerModule?.saveAuthToken) {
+              AppBlockerModule.saveAuthToken(""); 
+            }
+            if (AppBlockerModule?.updateBlockedApps) {
+              AppBlockerModule.updateBlockedApps([]);
+            }
+            if (CameraModule?.stopForegroundService) {
+              CameraModule.stopForegroundService();
+            }
+            setAuthToken('');
+            setIsAuthenticated(false);
+            setLogs([]);
+            setPassword('');
+            setCurrentScreen('dashboard');
+          }
+        }
+      ]
+    );
+  };
+
   if (!isAuthenticated) {
     return (
       <SafeAreaView style={styles.container}>
@@ -383,81 +432,145 @@ const App = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0B0F19" />
-      
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>NIYANTRAN</Text>
-        <View style={styles.glowLine} />
-      </View>
 
-      {/* Status Card */}
-      <View style={styles.card}>
-        <View style={styles.statusRow}>
-          <Text style={styles.statusLabel}>Background Monitoring</Text>
-          <View style={[styles.statusBadge, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
-            <View style={[styles.statusDot, { backgroundColor: '#10B981' }]} />
-            <Text style={[styles.statusText, { color: '#10B981' }]}>
-              ACTIVE
-            </Text>
+      {/* Scrollable top content */}
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 8 }}>
+
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.title}>NIYANTRAN</Text>
+          <View style={styles.glowLine} />
+        </View>
+
+        {/* Status Card */}
+        <View style={styles.card}>
+          <View style={styles.statusRow}>
+            <Text style={styles.statusLabel}>Background Monitoring</Text>
+            <View style={[styles.statusBadge, { backgroundColor: 'rgba(16, 185, 129, 0.15)' }]}>
+              <View style={[styles.statusDot, { backgroundColor: '#10B981' }]} />
+              <Text style={[styles.statusText, { color: '#10B981' }]}>
+                ACTIVE
+              </Text>
+            </View>
           </View>
         </View>
-      </View>
 
-      <View style={{ paddingHorizontal: 20, marginBottom: 30, gap: 16 }}>
-        <TouchableOpacity 
-          style={[styles.actionButton, isGrayscale ? styles.actionButtonActive : null]} 
-          onPress={toggleGrayscale}
-          activeOpacity={0.8}
-        >
-          <Text style={[styles.actionButtonText, isGrayscale && { color: '#FFFFFF' }]}>
-            {isGrayscale ? 'DISABLE GRAYSCALE' : 'ENABLE GRAYSCALE'}
-          </Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.actionButton} 
-          onPress={() => setCurrentScreen('appBlocker')}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.actionButtonText}>CONFIGURE APP BLOCKER</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={styles.actionButton} 
-          onPress={() => setCurrentScreen('community')}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.actionButtonText}>COMMUNITY HUB</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Logs Toggle */}
-      <TouchableOpacity 
-        style={styles.logToggleBtn} 
-        onPress={() => setShowLogs(!showLogs)}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.logToggleText}>
-          {showLogs ? 'Hide System Logs' : 'View System Logs'}
-        </Text>
-      </TouchableOpacity>
-
-      {showLogs && (
-        <View style={styles.logContainer}>
-          <ScrollView 
-            ref={scrollViewRef}
-            onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
-            style={styles.scrollView}
+        <View style={{ paddingHorizontal: 20, marginBottom: 20, gap: 16 }}>
+          <TouchableOpacity
+            style={[styles.actionButton, isGrayscale ? styles.actionButtonActive : null]}
+            onPress={toggleGrayscale}
+            activeOpacity={0.8}
           >
-            {logs.map((log) => (
+            <Text style={[styles.actionButtonText, isGrayscale && { color: '#FFFFFF' }]}>
+              {isGrayscale ? 'DISABLE GRAYSCALE' : 'ENABLE GRAYSCALE'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setCurrentScreen('appBlocker')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.actionButtonText}>CONFIGURE APP BLOCKER</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => setCurrentScreen('community')}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.actionButtonText}>COMMUNITY HUB</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.logoutButtonText}>LOGOUT</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Latest Analysis Result Panel */}
+        {latestResult && (
+          <View style={styles.resultCard}>
+            <Text style={styles.resultTitle}>LATEST ANALYSIS</Text>
+            <Text style={styles.resultTimestamp}>
+              {latestResult.timestamp.toLocaleTimeString()}
+            </Text>
+            <View style={styles.resultRow}>
+              <View style={[styles.resultBadge, {
+                backgroundColor: latestResult.has_dry_eye
+                  ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)',
+                borderColor: latestResult.has_dry_eye ? '#EF4444' : '#10B981',
+              }]}>
+                <Text style={styles.resultBadgeIcon}>
+                  {latestResult.has_dry_eye ? '👁️‍🗨️' : '✅'}
+                </Text>
+                <Text style={[styles.resultBadgeText, {
+                  color: latestResult.has_dry_eye ? '#EF4444' : '#10B981',
+                }]}>
+                  {latestResult.has_dry_eye === null
+                    ? 'UNKNOWN'
+                    : latestResult.has_dry_eye ? 'DRY EYE DETECTED' : 'EYES HEALTHY'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.resultMetrics}>
+              <View style={styles.resultMetricItem}>
+                <Text style={styles.resultMetricLabel}>DISTRACTION PROB.</Text>
+                <Text style={[styles.resultMetricValue, {
+                  color: (latestResult.probability ?? 0) > 0.5 ? '#EF4444' : '#10B981',
+                }]}>
+                  {latestResult.probability !== null
+                    ? `${(latestResult.probability * 100).toFixed(1)}%`
+                    : 'N/A'}
+                </Text>
+              </View>
+              <View style={styles.resultMetricDivider} />
+              <View style={styles.resultMetricItem}>
+                <Text style={styles.resultMetricLabel}>EAR LEFT</Text>
+                <Text style={styles.resultMetricValue}>
+                  {latestResult.mean_ear_left.toFixed(3)}
+                </Text>
+              </View>
+              <View style={styles.resultMetricDivider} />
+              <View style={styles.resultMetricItem}>
+                <Text style={styles.resultMetricLabel}>EAR RIGHT</Text>
+                <Text style={styles.resultMetricValue}>
+                  {latestResult.mean_ear_right.toFixed(3)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Always-On System Logs Panel */}
+      <View style={styles.logPanel}>
+        <View style={styles.logPanelHeader}>
+          <View style={styles.logPanelDot} />
+          <Text style={styles.logPanelTitle}>SYSTEM LOG</Text>
+          <Text style={styles.logPanelCount}>{logs.length} entries</Text>
+        </View>
+        <ScrollView
+          ref={scrollViewRef}
+          onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+          style={styles.logScrollView}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 8 }}
+        >
+          {logs.length === 0 ? (
+            <Text style={styles.logEmptyText}>Waiting for events...</Text>
+          ) : (
+            logs.map((log) => (
               <View key={log.id} style={styles.logEntry}>
                 <Text style={styles.logTime}>[{new Date(log.id).toLocaleTimeString()}]</Text>
                 <Text style={[styles.logText, { color: getLogColor(log.type) }]}>{log.text}</Text>
               </View>
-            ))}
-          </ScrollView>
-        </View>
-      )}
+            ))
+          )}
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 };
@@ -643,10 +756,93 @@ const styles = StyleSheet.create({
     fontSize: 14,
     letterSpacing: 2,
   },
+  logoutButton: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    paddingVertical: 18,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  logoutButtonText: {
+    color: '#EF4444',
+    fontWeight: '800',
+    fontSize: 14,
+    letterSpacing: 2,
+  },
   logToggleBtn: {
     alignSelf: 'center',
     padding: 10,
     marginBottom: 10,
+  },
+  // Result Panel
+  resultCard: {
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.25)',
+  },
+  resultTitle: {
+    color: '#3B82F6',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginBottom: 2,
+  },
+  resultTimestamp: {
+    color: '#475569',
+    fontSize: 11,
+    marginBottom: 14,
+  },
+  resultRow: {
+    marginBottom: 14,
+  },
+  resultBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  resultBadgeIcon: {
+    fontSize: 16,
+    marginRight: 8,
+  },
+  resultBadgeText: {
+    fontWeight: '800',
+    fontSize: 13,
+    letterSpacing: 1,
+  },
+  resultMetrics: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  resultMetricItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  resultMetricLabel: {
+    color: '#475569',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  resultMetricValue: {
+    color: '#E2E8F0',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  resultMetricDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
   logToggleText: {
     color: '#475569',
@@ -669,19 +865,65 @@ const styles = StyleSheet.create({
   },
   logEntry: {
     flexDirection: 'row',
-    marginBottom: 10,
+    marginBottom: 6,
+    flexWrap: 'wrap',
   },
   logTime: {
     color: '#334155',
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    marginRight: 12,
+    marginRight: 8,
   },
   logText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    lineHeight: 18,
+    lineHeight: 16,
+  },
+  logPanel: {
+    height: 180,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(59, 130, 246, 0.15)',
+  },
+  logPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.04)',
+    backgroundColor: 'rgba(15, 23, 42, 0.8)',
+  },
+  logPanelDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#10B981',
+    marginRight: 8,
+  },
+  logPanelTitle: {
+    flex: 1,
+    color: '#475569',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  logPanelCount: {
+    color: '#334155',
+    fontSize: 10,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  },
+  logScrollView: {
+    flex: 1,
+  },
+  logEmptyText: {
+    color: '#334155',
+    fontSize: 11,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontStyle: 'italic',
   },
 });
 

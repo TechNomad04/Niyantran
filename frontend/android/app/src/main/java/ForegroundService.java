@@ -112,6 +112,21 @@ public class ForegroundService extends Service {
         }
     }
 
+    private void sendResultToReact(String responseJson) {
+        if (CameraModule.reactContextStatic == null) return;
+        try {
+            org.json.JSONObject json = new org.json.JSONObject(responseJson);
+            com.facebook.react.bridge.WritableMap params = com.facebook.react.bridge.Arguments.createMap();
+            if (!json.isNull("probability"))    params.putDouble("probability",    json.getDouble("probability"));
+            if (!json.isNull("has_dry_eye"))    params.putBoolean("has_dry_eye",   json.getBoolean("has_dry_eye"));
+            if (!json.isNull("mean_ear_left"))  params.putDouble("mean_ear_left",  json.getDouble("mean_ear_left"));
+            if (!json.isNull("mean_ear_right")) params.putDouble("mean_ear_right", json.getDouble("mean_ear_right"));
+            CameraModule.reactContextStatic
+                .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                .emit("UploadResult", params);
+        } catch (Exception ignored) {}
+    }
+
     private void recordSilentVideo() {
         isRecording = true;
         updateNotification("Recording silent video...");
@@ -230,10 +245,11 @@ public class ForegroundService extends Service {
 
                     @Override
                     public void onResponse(Call call, Response response) throws IOException {
-                        String respString = response.body() != null ? response.body().string() : "No response";
-                        updateNotification("Upload complete!");
-                        sendLogToReact("Silent Upload successful! " + respString, "success");
-                        
+                        String respString = response.body() != null ? response.body().string() : "{}";
+                        updateNotification("Analysis complete!");
+                        sendLogToReact("Silent Upload successful! Analysis done.", "success");
+                        sendResultToReact(respString);
+
                         // Clean up temp file
                         videoFile.delete();
                     }

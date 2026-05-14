@@ -13,7 +13,7 @@ export const WarningScreen: React.FC<WarningScreenProps> = ({ packageName, onWhi
   const [timeLeft, setTimeLeft] = useState(10);
 
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: ReturnType<typeof setTimeout>;
     if (timeLeft > 0) {
       timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
     }

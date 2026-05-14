@@ -19,7 +19,7 @@ async def analyze(
     file: UploadFile = File(...),
     runner: PipelineRunner = Depends(get_runner),
 ) -> AnalyzeResponse:
-    if not file.content_type or not file.content_type.startswith("video/"):
+    if not file.content_type or (not file.content_type.startswith("video/") and file.content_type != "application/octet-stream"):
         raise HTTPException(
             status_code=415,
             detail=(

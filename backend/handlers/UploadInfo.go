@@ -3,15 +3,24 @@ package handlers
 import (
 	"Niyantran/utils"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+type PipelineResult struct {
+	Probability  *float64 `json:"probability"`
+	HasDryEye    *bool    `json:"has_dry_eye"`
+	MeanEarLeft  float64  `json:"mean_ear_left"`
+	MeanEarRight float64  `json:"mean_ear_right"`
+}
 
 func (h *Handler)UploadInfo(c *gin.Context) {
 	file, header, err := c.Request.FormFile("file")
@@ -40,8 +49,8 @@ func (h *Handler)UploadInfo(c *gin.Context) {
 	}
 
 	var query =  `
-		INSERT INTO results (userid, screentime, time) 
-		VALUES ($1, $2, $3)
+		INSERT INTO results (userid, screentime, probability, time) 
+		VALUES ($1, $2, 0.0, $3)
 		RETURNING id
 	`
 
@@ -86,7 +95,8 @@ func (h *Handler)UploadInfo(c *gin.Context) {
 
 	writer.Close()
 
-	req, err := http.NewRequest("POST", "route", &body)
+	pipelineURL := os.Getenv("PIPELINE_URL") + "/analyze"
+	req, err := http.NewRequest("POST", pipelineURL, &body)
 	if err != nil {
 		utils.ErrorHandler(c, 500, "Internal server error", fmt.Sprintf("%v", err))
 		return
@@ -110,9 +120,21 @@ func (h *Handler)UploadInfo(c *gin.Context) {
 		return
 	}
 
+	var result PipelineResult
+	if err := json.Unmarshal(respData, &result); err == nil && result.Probability != nil {
+		// Update the DB row with the real probability from the pipeline
+		h.DB.Exec(
+			"UPDATE results SET probability = $1 WHERE id = $2",
+			*result.Probability, resultID,
+		)
+	}
+
 	c.JSON(200, gin.H{
-		"code": 200,
-		"info": string(respData),
+		"code":           200,
+		"probability":    result.Probability,
+		"has_dry_eye":    result.HasDryEye,
+		"mean_ear_left":  result.MeanEarLeft,
+		"mean_ear_right": result.MeanEarRight,
 	})
 	c.Abort()
 }
