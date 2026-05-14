@@ -28,12 +28,17 @@ class DryEyePipeline:
         left_ear_sequence = []
         right_ear_sequence = []
 
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        frame_idx = 0
+
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
 
-            landmarks_list = self.ratio_calculator.get_landmarks(frame)
+            timestamp_ms = int(frame_idx * (1000.0 / fps))
+            landmarks_list = self.ratio_calculator.get_landmarks(frame, timestamp_ms)
+            frame_idx += 1
 
             if landmarks_list:
                 landmarks = landmarks_list[0]
